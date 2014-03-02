@@ -1,6 +1,7 @@
 function Database(data)
 {
-	var limit = 10;
+	var entityLimit = 10;
+	var dimensionLimit = 10;
 
 	var typesDensity = {};
 
@@ -32,7 +33,7 @@ function Database(data)
 			return b.score - a.score;
 		});
 
-		return results.slice(0, limit).map(function(result){
+		return results.slice(0, entityLimit).map(function(result){
 			return result.data;
 		});
 	};
@@ -66,8 +67,15 @@ function Database(data)
 		var entityType = filter.type.name;
 
 		var results = [];
+		var dimensionResults = [];
 		var dimensions = {};
 		var filters = {};
+		var activeFilters = {};
+
+		for (var c in filter.conditions)
+		{
+			activeFilters[filter.conditions[c].dimension+"="+filter.conditions[c].value] = true;
+		}
 
 		itemLoop:
 		for (var key in data.data)
@@ -108,6 +116,7 @@ function Database(data)
 				{
 					results.push({score: score, data: {
 						handle: key,
+						key: key,
 						description: 'View'
 					}});
 				}
@@ -121,6 +130,8 @@ function Database(data)
 						if (dimensions[dimension])
 						{
 							dimensions[dimension].score += score;
+							dimensions[dimension].data.objects.insert(key);
+							dimensions[dimension].data.values.insert(item.characteristics[dimension]);
 						}
 						else
 						{
@@ -130,11 +141,13 @@ function Database(data)
 									handle: dimension,
 									description: 'Filter by '+dimension,
 									kind: 'dimension',
-									dimension: dimension
+									dimension: dimension,
+									objects: new Set(key),
+									values: new Set(item.characteristics[dimension])
 								}
 							};
 
-							results.push(dimensions[dimension]);
+							dimensionResults.push(dimensions[dimension]);
 						}
 					}
 				}
@@ -157,36 +170,94 @@ function Database(data)
 					if (score > 0 || query.length === 0)
 					{
 						var filterKey = filter.dimension+"="+values[v];
-						if (filters[filterKey])
+
+						if (!activeFilters[filterKey])
 						{
-							filters[filterKey].score += score;	
-						}
-						else
-						{
-							filters[filterKey] = {
-								score: score,
-								data: {
-									handle: 'Filter by '+filter.dimension,
-									description: values[v],
-									kind: 'filter',
-									dimension: filter.dimension,
-									value: values[v]
-								}
-							};
-							results.push(filters[filterKey]);
+							if (filters[filterKey])
+							{
+								filters[filterKey].score += score;
+								filters[filterKey].data.objects.insert(key);	
+							}
+							else
+							{
+								filters[filterKey] = {
+									score: score,
+									data: {
+										handle: 'Filter by '+filter.dimension,
+										description: values[v],
+										kind: 'filter',
+										dimension: filter.dimension,
+										value: values[v],
+										objects: new Set(key)
+									}
+								};
+								results.push(filters[filterKey]);
+							}
 						}
 					}
 				}
 			}
 		}
 
-		results.sort(function(a, b){
-			return b.score - a.score;
-		});
+		if (filter.state === 'E')
+		{
+			var activeConditions = {};
+			for (var i in filter.conditions)
+			{
+				activeConditions[filter.conditions[i].dimension] = 
+				(activeConditions[filter.conditions[i].dimension] || new Set())
+				.insert(filter.conditions[i].value);
+			}
 
-		return results.slice(0, limit).map(function(result){
+			// Keep only *entityLimit* most accurate Entity results
+			results.sort(function(a, b){
+				return b.score - a.score;
+			});
+			results = results.slice(0, entityLimit);
+
+			var keys = results.map(function(result){return result.data.key;});
+
+			for (var d = 0; d < dimensionResults.length; d++)
+			{
+				// Add the dimension filter only if it is useful,
+				// i.e. if it may be used to display results that are not currently on screen
+				var useless = dimensionResults[d].data.objects.includedIn(keys);
+				var dimension = dimensionResults[d].data.dimension;
+				if (!useless && activeConditions[dimension])
+				{
+					useless = activeConditions[dimension].includes(dimensionResults[d].data.values.toArray());
+				}
+				if (!useless)
+				{
+					results.push(dimensionResults[d]);
+				}
+
+				dimensionResults[d].data.valuesCount = dimensionResults[d].data.values.count();
+				// Do not keep this in Angular world
+				delete dimensionResults[d].data.values;
+
+				console.log("Filter on", dimensionResults[d].data.dimension, useless ? "useless" : "kept")
+			}
+
+			// Sort results again, because we may have added a few!
+			results.sort(function(a, b){
+				return b.score - a.score;
+			});
+		}
+
+		results = results.slice(0, entityLimit + dimensionLimit).map(function(result){
+			if (result.data.objects)
+			{
+				result.data.count = result.data.objects.count();
+				// Angular does not need to know about this, it would make him crazy
+				delete result.data.objects;
+			}
 			return result.data;
 		});
+
+		console.log(results);
+
+		return results;
 	};
 
 	this.matchScore = function(haystack, needle)
@@ -324,7 +395,7 @@ function Database(data)
 			return b.score - a.score;
 		});
 
-		return results.slice(0, limit).map(function(result){
+		return results.slice(0, entityLimit).map(function(result){
 			return result.data;
 		});
 	};
