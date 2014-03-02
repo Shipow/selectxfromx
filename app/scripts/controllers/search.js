@@ -71,6 +71,7 @@ angular.module('desktopApp')
 				else{
 					$scope.filter.conditions.splice($scope.filter.conditions.length-1, 1);
 				}
+				$scope.queryChanged();
 			}
 		}
 		// Up Arrow Key
