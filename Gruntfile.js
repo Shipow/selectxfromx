@@ -18,6 +18,14 @@ module.exports = function (grunt) {
   // Define the configuration for all the tasks
   grunt.initConfig({
 
+    // publish to github
+    'gh-pages': {
+      options: {
+        base: '<%= yeoman.dist %>'
+      },
+      src: ['**']
+    },
+
     // Project settings
     yeoman: {
       // configurable paths
@@ -399,6 +407,8 @@ module.exports = function (grunt) {
     'usemin',
     'htmlmin'
   ]);
+
+  grunt.loadNpmTasks('grunt-gh-pages');
 
   grunt.registerTask('default', [
     'newer:jshint',
